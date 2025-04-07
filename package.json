@@ -1,0 +1,16 @@
+{
+  "name": "gold-price-tracker",
+  "version": "1.0.0",
+  "description": "A program to track gold prices in Australia and Nepalese currency and send SMS alerts.",
+  "author": "Saugat Malla",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "node-schedule": "^2.1.1",
+    "twilio": "^5.5.2"
+  }
+}
