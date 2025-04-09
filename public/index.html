@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Price Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: gold;
+            text-align: center;
+        }
+        p {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gold Price Tracker</h1>
+        <p>This application tracks gold prices in Australia and Nepal currency and sends SMS alerts.</p>
+        <p>Automatic updates are sent at:</p>
+        <ul>
+            <li>10:00 AM Sydney time</li>
+            <li>6:00 PM Sydney time</li>
+        </ul>
+        <p>The application uses Netlify scheduled functions to automatically check prices and send SMS notifications via Twilio.</p>
+    </div>
+</body>
+</html>

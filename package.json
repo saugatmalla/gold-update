@@ -5,7 +5,8 @@
   "author": "Saugat Malla",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "build": "npm install"
   },
   "dependencies": {
     "axios": "^1.6.0",
