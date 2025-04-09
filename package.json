@@ -13,5 +13,8 @@
     "dotenv": "^16.3.1",
     "node-schedule": "^2.1.1",
     "twilio": "^5.5.2"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^3.0.4"
   }
 }

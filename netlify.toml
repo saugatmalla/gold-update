@@ -6,9 +6,6 @@
 [dev]
   publish = "public"
   functions = "netlify/functions"
-  
-[[plugins]]
-  package = "@netlify/plugin-functions-core"
 
 [functions."gold-price-tracker"]
   schedule = "0 0,8 * * *"
