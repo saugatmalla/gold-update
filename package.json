@@ -4,6 +4,7 @@
   "description": "A program to track gold prices in Australia and Nepalese currency and send SMS alerts.",
   "author": "Saugat Malla",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
     "build": "npm install"
