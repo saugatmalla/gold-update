@@ -15,7 +15,16 @@ async function getPriceWithGemini() {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: [
-        `What is the todays Hallmark gold and silver price in Nepal? Also, compare these prices the last days prices. Limit the response text to 160 characters`,
+        `
+        What is the todays Hallmark gold and silver price in Nepal? Also, compare these prices the last days prices. https://www.ashesh.com.np/gold/ for your reference. Limit the response text to 160 characters? Use this format below for answer:
+        Hallmark gold:
+        Today - {price of today}
+        Yesterday - {price of yesterday}
+        
+        Silver:
+        Today - {price of today}
+        Yesterday - {price of yesterday}
+        `,
     ],
     config: {
       tools: [{googleSearch: {}}],
