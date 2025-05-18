@@ -146,9 +146,10 @@ async function displayGoldPrices() {
       `Gold Price: ${goldPrice}`,
       `Silver Price: ${silverPrice}`,
       `Gold Diff: ${goldDiff}`,
-      `Silver Diff: ${silverDiff}`
+      `Silver Diff: ${silverDiff}`,
+      'Reply STOP to unsubscribe.'
     ].join('\n');
-    
+
     await twilioClient.messages.create({
       body: smsMessage,
       from: process.env.TWILIO_PHONE_NUMBER,
