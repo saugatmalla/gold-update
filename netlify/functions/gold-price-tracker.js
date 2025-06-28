@@ -1,172 +1,129 @@
 import { GoogleGenAI } from "@google/genai";
+import { neon } from "@neondatabase/serverless";
 import twilio from "twilio";
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
+import dotenv from "dotenv";
+
 dotenv.config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
+const { PGHOST, PGDATABASE, PGUSER, PGPASSWORD } = process.env;
+
+const sql = neon(`postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}/${PGDATABASE}?sslmode=require`);
 
 async function getPriceWithGemini() {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: [
-      `
-          Use this link: https://www.hamropatro.com/gold. What is the hallmark gold price per tola and silver price per tola today? Answer in this JSON schema: 
-          Price = {'gold': number, 'silver': number}
-          Return: Price 
-        `,
+      `Use this link: https://www.hamropatro.com/gold. What is the hallmark gold price per tola and silver price per tola today? Answer in this JSON schema: Price = {'gold': number, 'silver': number} Return: Price`,
     ],
-    config: {
-      tools: [{ googleSearch: {} }],
-    },
+    config: { tools: [{ googleSearch: {} }] },
   });
   return response.text;
 }
 
 function parseJsonMessage(_message) {
-  let goldPrice, silverPrice;
   try {
-    // remove string ```json from the start and end of the message
-    const message = _message.replace(/```json/g, '').replace(/```/g, '').trim();
+    let cleaned = _message.replace(/^[^{]*=\s*/, '').trim();
 
-    let priceData;
-    try {
-      priceData = JSON.parse(message);
-    } catch (e) {
-      throw new Error('Message is not valid JSON');
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON object found');
+    cleaned = match[0];
+
+    cleaned = cleaned.replace(/'/g, '"');
+
+    const data = JSON.parse(cleaned);
+    if (typeof data.gold !== 'number' || typeof data.silver !== 'number') {
+      throw new Error('Schema mismatch');
     }
-
-    if (!priceData || typeof priceData !== 'object') {
-      throw new Error('Invalid JSON format');
-    }
-    goldPrice = priceData.gold;
-    silverPrice = priceData.silver;
-    
-    return { goldPrice, silverPrice };
-
-  } catch (jsonError) {
-    console.error('Error parsing JSON:', jsonError);
-    
+    return { goldPrice: data.gold, silverPrice: data.silver };
+  } catch (err) {
+    console.error('Failed to parse JSON:', err, '\nRaw message:', _message);
+    return null;
   }
 }
 
 async function updateGoldSilverPrices({ goldPrice, silverPrice }) {
-  const csvPath = path.resolve('./data.csv');
-  let lastGold = null, lastSilver = null;
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-  try {
-    if (
-      goldPrice === undefined ||
-      silverPrice === undefined ||
-      isNaN(parseInt(goldPrice, 10)) ||
-      isNaN(parseInt(silverPrice, 10))
-    ) {
-      throw new Error('Invalid gold or silver price input.');
-    }
+  const goldInt = Math.round(goldPrice);
+  const silverInt = Math.round(silverPrice);
 
-    if (!fs.existsSync(csvPath)) {
-      try {
-        fs.writeFileSync(csvPath, 'date,gold,silver\n', 'utf8');
-      } catch (writeErr) {
-        console.error('Error creating CSV file:', writeErr);
-        throw writeErr;
-      }
-    }
+  const prevRes = await sql`SELECT gold, silver FROM daily_prices WHERE price_date = ${yesterday}`;
+  const prev = prevRes[0] || {};
 
-    let data;
-    try {
-      data = fs.readFileSync(csvPath, 'utf8').trim();
-    } catch (readErr) {
-      console.error('Error reading CSV file:', readErr);
-      throw readErr;
-    }
+  await sql`
+    INSERT INTO daily_prices (price_date, gold, silver)
+    VALUES (${today}, ${goldInt}, ${silverInt})
+    ON CONFLICT (price_date)
+    DO UPDATE SET gold = EXCLUDED.gold, silver = EXCLUDED.silver
+  `;
 
-    const rows = data.split('\n');
-    if (rows.length > 1) {
-      const lastRow = rows[rows.length - 1].split(',');
-      if (
-        lastRow.length >= 3 &&
-        !isNaN(parseInt(lastRow[1], 10)) &&
-        !isNaN(parseInt(lastRow[2], 10))
-      ) {
-        lastGold = parseInt(lastRow[1], 10);
-        lastSilver = parseInt(lastRow[2], 10);
-      }
-    }
-
-    const newGold = parseInt(goldPrice, 10);
-    const newSilver = parseInt(silverPrice, 10);
-
-    const goldDiff = lastGold !== null ? newGold - lastGold : null;
-    const silverDiff = lastSilver !== null ? newSilver - lastSilver : null;
-
-    const today = new Date().toISOString().split('T')[0];
-    const newRow = `${today},${newGold},${newSilver}\n`;
-    try {
-      fs.appendFileSync(csvPath, newRow, 'utf8');
-    } catch (appendErr) {
-      console.error('Error appending to CSV file:', appendErr);
-      throw appendErr;
-    }
-
-    return { goldDiff, silverDiff };
-  } catch (err) {
-    console.error('Error in updateGoldSilverPrices:', err);
-    return { goldDiff: null, silverDiff: null, error: err.message };
-  }
+  const goldDiff = prev.gold != null ? goldInt - prev.gold : null;
+  const silverDiff = prev.silver != null ? silverInt - prev.silver : null;
+  return { goldDiff, silverDiff };
 }
 
 async function displayGoldPrices() {
   try {
-    const message = await getPriceWithGemini();
+    let message, parsed;
+    let attempts = 0;
+    const maxAttempts = 3;
 
-    const jsonMessage = parseJsonMessage(message);
+    while (attempts < maxAttempts) {
+      message = await getPriceWithGemini();
+      parsed = parseJsonMessage(message);
+      if (parsed) break;
+      attempts++;
+      if (attempts < maxAttempts) {
+        console.warn(`Parse attempt ${attempts} failed, retrying...`);
+      }
+    }
 
-    if (!jsonMessage) {
-      console.error('Failed to parse JSON message.');
+    if (!parsed) {
+      console.error(`Failed to parse Gemini response after ${maxAttempts} attempts.`);
       return;
     }
 
-    const { goldPrice, silverPrice } = jsonMessage;
+    const { goldPrice, silverPrice } = parsed;
+    const { goldDiff, silverDiff } = await updateGoldSilverPrices({ goldPrice, silverPrice });
 
-    const { goldDiff, silverDiff, error } = await updateGoldSilverPrices({ goldPrice, silverPrice });
-
-    if (error) {
-      console.error('Failed to update prices:', error);
-    }
-
-    const smsMessage = [
+    const smsBody = [
       `Gold Price: ${goldPrice}`,
       `Silver Price: ${silverPrice}`,
       `Gold Diff: ${goldDiff}`,
       `Silver Diff: ${silverDiff}`,
-      'Reply STOP to unsubscribe.'
+      `Reply STOP to unsubscribe.`
     ].join('\n');
 
-    await twilioClient.messages.create({
-      body: smsMessage,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: process.env.RECIPIENT_PHONE_NUMBER
-    });
+    const recipients = (process.env.RECIPIENT_PHONE_NUMBERS || "")
+      .split(",")
+      .map(num => num.trim())
+      .filter(Boolean);
 
-  } catch (error) {
-    console.error('Error in displaying gold prices:', error);
-    throw error;
+    for (const to of recipients) {
+      await twilioClient.messages.create({
+        body: smsBody,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to
+      });
+      console.log('SMS sent to:', to);
+    }
+  } catch (err) {
+    console.error('Error in displayGoldPrices:', err);
+    throw err;
   }
 }
 
-export default async (event, context) => {
-  console.log("Triggered Netlify Scheduled Function.");
+export default async function handler(event, context) {
+  console.log('Netlify function triggered at', new Date().toISOString());
   await displayGoldPrices();
   return {
     statusCode: 200,
-    body: "Gold Price SMS sent successfully."
+    body: "Gold & Silver price SMS sent successfully."
   };
-};
+}
