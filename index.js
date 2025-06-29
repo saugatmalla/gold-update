@@ -5,7 +5,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Initialize AI, Twilio, and Neon Postgres clients
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -15,7 +14,6 @@ const { PGHOST, PGDATABASE, PGUSER, PGPASSWORD } = process.env;
 
 const sql = neon(`postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}/${PGDATABASE}?sslmode=require`);
 
-// 1. Fetch gold & silver prices via Gemini + Google Search tool
 async function getPriceWithGemini() {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
@@ -27,18 +25,14 @@ async function getPriceWithGemini() {
   return response.text;
 }
 
-// 2. Parse the JSON string Gemini returns
 function parseJsonMessage(_message) {
   try {
-    // Remove any assignment like "Price ="
     let cleaned = _message.replace(/^[^{]*=\s*/, '').trim();
 
-    // Extract JSON substring
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON object found');
     cleaned = match[0];
 
-    // Replace single quotes with double quotes for valid JSON
     cleaned = cleaned.replace(/'/g, '"');
 
     const data = JSON.parse(cleaned);
@@ -52,20 +46,20 @@ function parseJsonMessage(_message) {
   }
 }
 
-// 3. Upsert today's prices into Postgres and compute diffs
 async function updateGoldSilverPrices({ goldPrice, silverPrice }) {
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-  // Ensure whole numbers
   const goldInt = Math.round(goldPrice);
   const silverInt = Math.round(silverPrice);
 
-  // Fetch previous day's prices
+  // Fetch yesterday's prices BEFORE inserting today's
   const prevRes = await sql`SELECT gold, silver FROM daily_prices WHERE price_date = ${yesterday}`;
   const prev = prevRes[0] || {};
 
-  // Upsert today's prices
+  console.log(`Yesterday's prices: gold=${prev.gold}, silver=${prev.silver}`);
+  console.log(`Today's prices: gold=${goldInt}, silver=${silverInt}`);
+
   await sql`
     INSERT INTO daily_prices (price_date, gold, silver)
     VALUES (${today}, ${goldInt}, ${silverInt})
@@ -78,7 +72,6 @@ async function updateGoldSilverPrices({ goldPrice, silverPrice }) {
   return { goldDiff, silverDiff };
 }
 
-// 4. Orchestrate retrieval, storage, and Twilio SMS dispatch
 async function displayGoldPrices() {
   try {
     let message, parsed;
@@ -87,6 +80,7 @@ async function displayGoldPrices() {
 
     while (attempts < maxAttempts) {
       message = await getPriceWithGemini();
+      console.log("Gemini raw response:", message);
       parsed = parseJsonMessage(message);
       if (parsed) break;
       attempts++;
@@ -101,7 +95,10 @@ async function displayGoldPrices() {
     }
 
     const { goldPrice, silverPrice } = parsed;
+    console.log("Parsed prices:", goldPrice, silverPrice);
+
     const { goldDiff, silverDiff } = await updateGoldSilverPrices({ goldPrice, silverPrice });
+    console.log("Diffs:", goldDiff, silverDiff);
 
     const smsBody = [
       `Gold Price: ${goldPrice}`,
@@ -111,10 +108,12 @@ async function displayGoldPrices() {
       `Reply STOP to unsubscribe.`
     ].join('\n');
 
-    const recipients = (process.env.RECIPIENT_PHONE_NUMBERS || "")
+    const recipients = (process.env.RECIPIENT_PHONE_NUMBER || "")
       .split(",")
       .map(num => num.trim())
       .filter(Boolean);
+
+    console.log("Recipients:", recipients);
 
     for (const to of recipients) {
       await twilioClient.messages.create({

@@ -53,8 +53,12 @@ async function updateGoldSilverPrices({ goldPrice, silverPrice }) {
   const goldInt = Math.round(goldPrice);
   const silverInt = Math.round(silverPrice);
 
+  // Fetch yesterday's prices BEFORE inserting today's
   const prevRes = await sql`SELECT gold, silver FROM daily_prices WHERE price_date = ${yesterday}`;
   const prev = prevRes[0] || {};
+
+  console.log(`Yesterday's prices: gold=${prev.gold}, silver=${prev.silver}`);
+  console.log(`Today's prices: gold=${goldInt}, silver=${silverInt}`);
 
   await sql`
     INSERT INTO daily_prices (price_date, gold, silver)
@@ -76,6 +80,7 @@ async function displayGoldPrices() {
 
     while (attempts < maxAttempts) {
       message = await getPriceWithGemini();
+      console.log("Gemini raw response:", message);
       parsed = parseJsonMessage(message);
       if (parsed) break;
       attempts++;
@@ -90,7 +95,10 @@ async function displayGoldPrices() {
     }
 
     const { goldPrice, silverPrice } = parsed;
+    console.log("Parsed prices:", goldPrice, silverPrice);
+
     const { goldDiff, silverDiff } = await updateGoldSilverPrices({ goldPrice, silverPrice });
+    console.log("Diffs:", goldDiff, silverDiff);
 
     const smsBody = [
       `Gold Price: ${goldPrice}`,
@@ -100,10 +108,12 @@ async function displayGoldPrices() {
       `Reply STOP to unsubscribe.`
     ].join('\n');
 
-    const recipients = (process.env.RECIPIENT_PHONE_NUMBERS || "")
+    const recipients = (process.env.RECIPIENT_PHONE_NUMBER || "")
       .split(",")
       .map(num => num.trim())
       .filter(Boolean);
+
+    console.log("Recipients:", recipients);
 
     for (const to of recipients) {
       await twilioClient.messages.create({
