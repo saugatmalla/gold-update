@@ -122,8 +122,8 @@ async function displayGoldPrices() {
 export default async function handler(event, context) {
   console.log('Netlify function triggered at', new Date().toISOString());
   await displayGoldPrices();
-  return {
-    statusCode: 200,
-    body: "Gold & Silver price SMS sent successfully."
-  };
+  return new Response("Gold & Silver price SMS sent successfully.", {
+    status: 200,
+    headers: { "Content-Type": "text/plain" }
+  });
 }
