@@ -8,4 +8,4 @@
   functions = "netlify/functions"
 
 [functions."gold-price-tracker"]
-  schedule = "28 0 * * *"
+  schedule = "10 0 * * *"
