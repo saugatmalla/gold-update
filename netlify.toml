@@ -7,5 +7,5 @@
   publish = "public"
   functions = "netlify/functions"
 
-[functions."gold-price-tracker"]
-  schedule = "10 0 * * *"
+# [functions."gold-price-tracker"]
+#  schedule = "10 0 * * *"
